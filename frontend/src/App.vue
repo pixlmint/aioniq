@@ -1,10 +1,23 @@
 <template>
+    <header>
+        <div class="wrapper">
+            <HelloWorld msg="You did it!" />
+
+            <nav>
+                <RouterLink to="/">Home</RouterLink>
+            </nav>
+        </div>
+    </header>
     <el-button @click="signInWithGoogle">Login</el-button>
+
+    <RouterView />
 </template>
 
-<script lang="ts" setup>
+<script setup lang="ts">
+// import { RouterLink, RouterView } from 'vue-router'
+// import HelloWorld from './components/HelloWorld.vue'
 import { decodeCredential, googleSdkLoaded } from 'vue3-google-login';
-import { useUserStore } from '@/store/userStore'
+import { useUserStore } from '@/stores/userStore'
 import { storeToRefs } from 'pinia';
 
 const userStore = useUserStore();
