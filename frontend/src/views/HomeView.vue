@@ -1,7 +1,7 @@
 <template>
-  <main>
-    <HelloWorld msg=":)" />
-  </main>
+    <main>
+        <HelloWorld msg=":)" />
+    </main>
 </template>
 
 <script setup lang="ts">
