@@ -1,11 +1,11 @@
+using System.Threading.Tasks;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -23,15 +23,17 @@ public class CalendarController : ControllerBase
     public async Task<IActionResult> GetEvents(DateTime dateTime)
     {
         var accessToken = await HttpContext.GetTokenAsync("access_token");
-        
+
         if (string.IsNullOrEmpty(accessToken))
             return Unauthorized("Google access token not found");
 
-        var service = new CalendarService(new BaseClientService.Initializer
-        {
-            HttpClientInitializer = GoogleCredential.FromAccessToken(accessToken),
-            ApplicationName = "aioniq"
-        });
+        var service = new CalendarService(
+            new BaseClientService.Initializer
+            {
+                HttpClientInitializer = GoogleCredential.FromAccessToken(accessToken),
+                ApplicationName = "aioniq",
+            }
+        );
 
         var request = service.Events.List("primary");
         request.TimeMin = DateTime.Now;
@@ -40,8 +42,7 @@ public class CalendarController : ControllerBase
         request.OrderBy = EventsResource.ListRequest.OrderByEnum.StartTime;
 
         var events = await request.ExecuteAsync();
-        
+
         return Ok(events.Items);
     }
 }
-

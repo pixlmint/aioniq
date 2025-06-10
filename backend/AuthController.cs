@@ -1,12 +1,12 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -24,7 +24,7 @@ public class AuthController : ControllerBase
     {
         var properties = new AuthenticationProperties
         {
-            RedirectUri = "https://localhost:5001/api/auth/google-callback"
+            RedirectUri = "https://localhost:5001/api/auth/google-callback",
         };
         return Challenge(properties, GoogleDefaults.AuthenticationScheme);
     }
@@ -32,7 +32,9 @@ public class AuthController : ControllerBase
     [HttpGet("google-callback")]
     public async Task<IActionResult> GoogleCallback()
     {
-        var authenticateResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        var authenticateResult = await HttpContext.AuthenticateAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme
+        );
 
         if (!authenticateResult.Succeeded)
             return Unauthorized();
@@ -45,20 +47,27 @@ public class AuthController : ControllerBase
 
         // You should handle this redirect properly in production
         // This is just a simple example to return tokens to the frontend
-        return Redirect($"http://localhost:5173/auth-callback?token={token}&googleAccessToken={accessToken}");
+        return Redirect(
+            $"http://localhost:5173/auth-callback?token={token}&googleAccessToken={accessToken}"
+        );
     }
 
     private string GenerateJwtToken(IEnumerable<Claim> claims)
     {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+        var securityKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+        );
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"],
             audience: _configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.Now.AddMinutes(Convert.ToDouble(_configuration["Jwt:ExpiryInMinutes"])),
-            signingCredentials: credentials);
+            expires: DateTime.Now.AddMinutes(
+                Convert.ToDouble(_configuration["Jwt:ExpiryInMinutes"])
+            ),
+            signingCredentials: credentials
+        );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
@@ -67,12 +76,13 @@ public class AuthController : ControllerBase
     [HttpGet("user")]
     public IActionResult GetCurrentUser()
     {
-        return Ok(new
-        {
-            Name = User.FindFirst(ClaimTypes.Name)?.Value,
-            Email = User.FindFirst(ClaimTypes.Email)?.Value,
-            Picture = User.FindFirst("picture")?.Value
-        });
+        return Ok(
+            new
+            {
+                Name = User.FindFirst(ClaimTypes.Name)?.Value,
+                Email = User.FindFirst(ClaimTypes.Email)?.Value,
+                Picture = User.FindFirst("picture")?.Value,
+            }
+        );
     }
 }
-

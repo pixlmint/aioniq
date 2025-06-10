@@ -1,7 +1,7 @@
+using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,66 +11,73 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Add services to the container
-builder.Services.AddAuthentication(options =>
-        {
+builder
+    .Services.AddAuthentication(options =>
+    {
         options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
-        })
-.AddCookie()
+    })
+    .AddCookie()
     .AddGoogle(googleOptions =>
-            {
-            googleOptions.ClientId = builder.Configuration["Authentication:Google:ClientId"];
-            googleOptions.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+    {
+        googleOptions.ClientId = builder.Configuration["Authentication:Google:ClientId"];
+        googleOptions.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
 
-            // Add Calendar API scope for Google Calendar access
-            googleOptions.Scope.Add("https://www.googleapis.com/auth/calendar");
-            googleOptions.CallbackPath = "/api/auth/google-callback";
+        // Add Calendar API scope for Google Calendar access
+        googleOptions.Scope.Add("https://www.googleapis.com/auth/calendar");
+        // googleOptions.CallbackPath = "/api/auth/google-callback";
 
-            // Save tokens for later use with Google APIs
-            googleOptions.SaveTokens = true;
+        // Save tokens for later use with Google APIs
+        // googleOptions.SaveTokens = true;
 
-            googleOptions.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        // googleOptions.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
-            googleOptions.CorrelationCookie.SameSite = SameSiteMode.Lax;
-            googleOptions.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
-            googleOptions.CorrelationCookie.Path = "/";
-            })
-.AddJwtBearer(options =>
-        {
+        // googleOptions.CorrelationCookie.SameSite = SameSiteMode.Lax;
+        // googleOptions.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
+        // googleOptions.CorrelationCookie.Path = "/";
+    })
+    .AddJwtBearer(options =>
+    {
         options.TokenValidationParameters = new TokenValidationParameters
         {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])
+            ),
         };
-        });
+    });
 
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 
 // Configure CORS for your Vue frontend
 builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "VueFrontend",
+        policy =>
         {
-        options.AddPolicy("VueFrontend", policy =>
-                {
-                policy.WithOrigins("http://localhost:5173") // Your Vue app URL
+            policy
+                .WithOrigins("http://localhost:5173") // Your Vue app URL
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials();
-                });
-        });
+        }
+    );
+});
 
 // ...
 
-builder.Services.AddHttpsRedirection(options => {
-        options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
-        options.HttpsPort = 5001;
-        });
+builder.Services.AddHttpsRedirection(options =>
+{
+    options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
+    options.HttpsPort = 5001;
+});
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -104,4 +111,3 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.Run();
-
