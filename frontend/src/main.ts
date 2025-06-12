@@ -1,3 +1,4 @@
+import 'bootstrap/dist/css/bootstrap-utilities.css'
 import './assets/main.css'
 import 'element-plus/dist/index.css'
 
@@ -8,7 +9,8 @@ import ElementPlus from 'element-plus'
 import App from './App.vue'
 import router from './router'
 import axios from 'axios'
-import googleAuth from './services/googleAuth'
+
+import localstorageWrapper from './services/localstorageWrapper'
 
 const app = createApp(App)
 
@@ -23,7 +25,7 @@ axios.interceptors.response.use(
 )
 
 axios.interceptors.request.use(config => {
-    const token = localStorage.getItem('jwt_token');
+    const token = localstorageWrapper.getItem('jwt');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
@@ -33,6 +35,5 @@ axios.interceptors.request.use(config => {
 app.use(ElementPlus)
 app.use(createPinia())
 app.use(router)
-app.use(googleAuth)
 
 app.mount('#app')

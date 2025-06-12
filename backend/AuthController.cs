@@ -20,7 +20,6 @@ using Pixlmint.Aioniq.Model;
 
 [Route("api/[controller]")]
 [ApiController]
-[Authorize]
 public class AuthController : ControllerBase
 {
     private readonly IConfiguration _configuration;
@@ -71,6 +70,30 @@ public class AuthController : ControllerBase
         }
 
         return await StepLogin(user);
+    }
+
+    [HttpPost("VerifyLoggedIn")]
+    public async Task<IActionResult> VerifyLoggedIn([FromBody] JsonElement data)
+    {
+        string? token = data.GetProperty("token").GetString();
+
+        if (token != null && ValidateJwtToken(token, out ClaimsPrincipal? principal))
+        {
+            return Ok(new { Token = token });
+        }
+
+        var refreshToken = await GetUserRefreshTokenOrNull();
+
+        Console.WriteLine(
+            "Found Token: " + refreshToken?.TokenHash + ", User: " + refreshToken?.User?.Email
+        );
+
+        if (refreshToken != null && refreshToken.User != null)
+        {
+            return await StepLogin(refreshToken.User);
+        }
+
+        return Unauthorized();
     }
 
     private async Task<TokenResponse> StepExchangeTokens(LoginDTO request)
@@ -125,7 +148,7 @@ public class AuthController : ControllerBase
 
         var token = GenerateJwtToken(claims);
 
-        InvalidateActiveRefreshTokens();
+        await InvalidateActiveRefreshTokens();
 
         var (refreshToken, plaintextRefreshToken) = GenerateRefreshToken(user);
 
@@ -138,30 +161,20 @@ public class AuthController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        return Ok(
-            new
-            {
-                User = new
-                {
-                    Email = user.Email,
-                    Picture = user.Picture,
-                    Name = user.Name,
-                },
-                Token = token,
-            }
-        );
+        return Ok(new { Token = token });
     }
 
     private (UserRefreshToken, string) GenerateRefreshToken(User user)
     {
-        var Headers = _contextAccessor.HttpContext.Request.Headers;
+        var Headers = _contextAccessor.HttpContext!.Request.Headers;
 
         var refreshToken =
             Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))
             + Headers.UserAgent
             + user.Id;
 
-        using (HashAlgorithm algo = SHA256.Create()) {
+        using (HashAlgorithm algo = SHA256.Create())
+        {
             var tokenHash = algo.ComputeHash(Encoding.UTF8.GetBytes(refreshToken));
             var Sb = new StringBuilder();
             foreach (Byte b in tokenHash)
@@ -169,7 +182,8 @@ public class AuthController : ControllerBase
             refreshToken = Sb.ToString();
         }
 
-        if (refreshToken == null) {
+        if (refreshToken == null)
+        {
             throw new NullReferenceException("Error creating refresh token hash");
         }
 
@@ -184,19 +198,31 @@ public class AuthController : ControllerBase
         return (token, refreshToken);
     }
 
-    private async void InvalidateActiveRefreshTokens()
+    private async Task<UserRefreshToken?> GetUserRefreshTokenOrNull()
     {
-        var Cookies = _contextAccessor.HttpContext.Request.Cookies;
-        if (Cookies.ContainsKey("RefreshToken"))
+        var Cookies = _contextAccessor.HttpContext!.Request.Cookies;
+        if (Cookies.ContainsKey("RefreshToken") && Cookies["RefreshToken"] != null)
         {
-            var existingToken = await _db.UserRefreshTokens.FirstOrDefaultAsync(t =>
-                t.TokenHash == HashRefreshToken(Cookies["RefreshToken"])
-            );
-            if (existingToken != null)
-            {
-                _db.UserRefreshTokens.Remove(existingToken);
-            }
+            Console.WriteLine("Plaintext Token: " + Cookies["RefreshToken"]);
+            return await _db
+                .UserRefreshTokens.Include(e => e.User)
+                .FirstOrDefaultAsync(t =>
+                    t.TokenHash == HashRefreshToken(Cookies["RefreshToken"]!)
+                );
         }
+        return null;
+    }
+
+    private async Task InvalidateActiveRefreshTokens()
+    {
+        var existingToken = await GetUserRefreshTokenOrNull();
+
+        if (existingToken != null)
+        {
+            _db.UserRefreshTokens.Remove(existingToken);
+        }
+
+        return;
     }
 
     private string HashRefreshToken(string PlaintextRefreshToken)
@@ -280,6 +306,40 @@ public class AuthController : ControllerBase
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private bool ValidateJwtToken(string token, out ClaimsPrincipal? principal)
+    {
+        principal = null;
+
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = _configuration["Jwt:Issuer"],
+                ValidAudience = _configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ClockSkew = TimeSpan.Zero, // Optional: removes default 5min tolerance
+            };
+
+            principal = tokenHandler.ValidateToken(
+                token,
+                validationParameters,
+                out SecurityToken validatedToken
+            );
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     public class LoginDTO

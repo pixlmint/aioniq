@@ -10,6 +10,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AuthCallback: typeof import('./src/components/AuthCallback.vue')['default']
     Calendar: typeof import('./src/components/Calendar.vue')['default']
+    ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElPageHeader: typeof import('element-plus/es')['ElPageHeader']
     Header: typeof import('./src/components/Header.vue')['default']

@@ -6,7 +6,10 @@
 
         <template #extra>
             <template v-if="isLoggedIn">
-                logged in
+                <div class="d-flex align-items-center">
+                    <span class="text-large">{{ userData.name }}</span>
+                    <el-avatar class="ms-2" :src="userData.picture" />
+                </div>
             </template>
             <template v-else>
                 <div ref="signinButtonRef" @click="signInWithGoogle"></div>
@@ -26,8 +29,12 @@ import axios from 'axios';
 const userStore = useUserStore();
 
 const isLoggedIn = computed(() => {
-    return false;
+    return userStore.user !== null;
 });
+
+const userData = computed(() => {
+    return userStore.user!;
+})
 
 const signinButtonRef = ref();
 

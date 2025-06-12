@@ -39,5 +39,5 @@ onMounted(() => {
 
 const initDone = computed(() => {
     return userStore.initDone;
-})
+});
 </script>
