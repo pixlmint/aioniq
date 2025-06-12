@@ -1,10 +1,15 @@
 using System.Text;
+using Google.Apis.Auth.AspNetCore3;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Pixlmint.Aioniq.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddDbContext<ApplicationDb>(opt =>
+    opt.UseNpgsql(builder.Configuration.GetConnectionString("DbConnection"))
+);
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -14,27 +19,21 @@ builder.Services.AddSwaggerGen();
 builder
     .Services.AddAuthentication(options =>
     {
+        // This forces challenge results to be handled by Google OpenID Handler, so there's no
+        // need to add an AccountController that emits challenges for Login.
+        options.DefaultChallengeScheme = GoogleOpenIdConnectDefaults.AuthenticationScheme;
+        // This forces forbid results to be handled by Google OpenID Handler, which checks if
+        // extra scopes are required and does automatic incremental auth.
+        options.DefaultForbidScheme = GoogleOpenIdConnectDefaults.AuthenticationScheme;
+        // Default scheme that will handle everything else.
+        // Once a user is authenticated, the OAuth2 token info is stored in cookies.
         options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
     })
     .AddCookie()
-    .AddGoogle(googleOptions =>
+    .AddGoogleOpenIdConnect(options =>
     {
-        googleOptions.ClientId = builder.Configuration["Authentication:Google:ClientId"];
-        googleOptions.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
-
-        // Add Calendar API scope for Google Calendar access
-        googleOptions.Scope.Add("https://www.googleapis.com/auth/calendar");
-        // googleOptions.CallbackPath = "/api/auth/google-callback";
-
-        // Save tokens for later use with Google APIs
-        // googleOptions.SaveTokens = true;
-
-        // googleOptions.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-
-        // googleOptions.CorrelationCookie.SameSite = SameSiteMode.Lax;
-        // googleOptions.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
-        // googleOptions.CorrelationCookie.Path = "/";
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"];
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
     })
     .AddJwtBearer(options =>
     {
@@ -54,6 +53,7 @@ builder
 
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 
 // Configure CORS for your Vue frontend
 builder.Services.AddCors(options =>

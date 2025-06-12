@@ -1,22 +1,40 @@
 <template>
     <div class="login-container">
         <h1>Sign In</h1>
+        <!--<a :href="loginUrl">Login</a>
         <button @click="signInWithGoogle" class="google-btn">
-            <!--<img src="@/assets/google-icon.svg" alt="Google" />-->
             Sign in with Google
         </button>
+        <GoogleLogin :callback="googleLoginCallback" />
+        <button :disabled="!isReady" @click="() => login()">Login using Google</button>-->
     </div>
 </template>
 
-<script>
-export default {
-    name: 'LoginView',
-    methods: {
-        signInWithGoogle() {
-            this.$auth.login();
-        }
-    }
+<script lang="ts" setup>
+/*import { computed } from "vue";
+import {
+    useCodeClient,
+    decodeCredential,
+    type ImplicitFlowSuccessResponse,
+    type ImplicitFlowErrorResponse,
+} from "vue3-google-signin";
+
+const googleLoginSuccess = function(response: ImplicitFlowSuccessResponse) {
+    console.log(response);
+    const { credential } = response;
+    const decodedCredential = decodeCredential(credential);
+    console.log("decoded:", decodedCredential);
 }
+
+const googleLoginError = function(response: ImplicitFlowErrorResponse) {
+    console.log(response);
+}
+
+const { isReady, login } = useCodeClient({
+    onSuccess: googleLoginSuccess,
+    onError: googleLoginError,
+    scope: "https://www.googleapis.com/auth/calendar.readonly profile"
+})*/
 </script>
 
 <style scoped>

@@ -1,56 +1,266 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Google.Apis.Auth.AspNetCore3;
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
+using Google.Apis.Auth.OAuth2.Responses;
+using Google.Apis.Calendar.v3;
+using Google.Apis.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Pixlmint.Aioniq.Data;
+using Pixlmint.Aioniq.Model;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize]
 public class AuthController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IHttpContextAccessor _contextAccessor;
+    private readonly ApplicationDb _db;
 
-    public AuthController(IConfiguration configuration)
+    public AuthController(
+        IConfiguration configuration,
+        IHttpContextAccessor contextAccessor,
+        ApplicationDb db
+    )
     {
         _configuration = configuration;
+        _contextAccessor = contextAccessor;
+        _db = db;
     }
 
-    [HttpGet("signin-google")]
-    public IActionResult SignInWithGoogle()
+    [HttpPost("HandleTokenRefresh")]
+    public async Task<IActionResult> HandleTokenRefresh()
     {
-        var properties = new AuthenticationProperties
+        return Ok();
+    }
+
+    [HttpPost("HackLogMeIn")]
+    public async Task<IActionResult> HackLogMeIn()
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == "swiss8oy.chg@gmail.com");
+
+        if (user == null)
         {
-            RedirectUri = "https://localhost:5001/api/auth/google-callback",
-        };
-        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+            return NotFound();
+        }
+
+        return await StepLogin(user);
     }
 
-    [HttpGet("google-callback")]
-    public async Task<IActionResult> GoogleCallback()
+    [HttpPost("HandleOAuthLogin")]
+    public async Task<IActionResult> HandleOAuthLogin([FromBody] LoginDTO request)
     {
-        var authenticateResult = await HttpContext.AuthenticateAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme
+        var tokenResponse = await StepExchangeTokens(request);
+        var userInfo = await GetUserProfileAsync(tokenResponse.AccessToken);
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.GoogleUserId == userInfo.Id);
+
+        if (user == null)
+        {
+            user = StepRegister(userInfo, tokenResponse);
+        }
+
+        return await StepLogin(user);
+    }
+
+    private async Task<TokenResponse> StepExchangeTokens(LoginDTO request)
+    {
+        var flow = new GoogleAuthorizationCodeFlow(
+            new GoogleAuthorizationCodeFlow.Initializer
+            {
+                ClientSecrets = new ClientSecrets
+                {
+                    ClientId = _configuration["Authentication:Google:ClientId"],
+                    ClientSecret = _configuration["Authentication:Google:ClientSecret"],
+                },
+                Scopes = new[]
+                {
+                    "https://www.googleapis.com/auth/calendar.readonly",
+                    "https://www.googleapis.com/auth/calendar",
+                    "https://www.googleapis.com/auth/tasks.readonly",
+                    "https://www.googleapis.com/auth/userinfo.profile",
+                    "https://www.googleapis.com/auth/userinfo.email",
+                },
+            }
         );
 
-        if (!authenticateResult.Succeeded)
-            return Unauthorized();
-
-        var accessToken = await HttpContext.GetTokenAsync("access_token");
-        var refreshToken = await HttpContext.GetTokenAsync("refresh_token");
-
-        // Generate JWT token
-        var token = GenerateJwtToken(authenticateResult.Principal.Claims);
-
-        // You should handle this redirect properly in production
-        // This is just a simple example to return tokens to the frontend
-        return Redirect(
-            $"http://localhost:5173/auth-callback?token={token}&googleAccessToken={accessToken}"
+        return await flow.ExchangeCodeForTokenAsync(
+            userId: "temp", // We'll replace this with actual user ID after getting profile
+            code: request.Code,
+            redirectUri: request.RedirectUri,
+            taskCancellationToken: CancellationToken.None
         );
     }
+
+    private User StepRegister(GoogleUserInfo userInfo, TokenResponse tokenResponse)
+    {
+        var user = userInfo.CreateUser();
+        _db.Users.Add(user);
+        StoreUserTokensAsync(user, tokenResponse);
+
+        return user;
+    }
+
+    private async Task<IActionResult> StepLogin(User user)
+    {
+        var claims = new[]
+        {
+            new Claim("prim", user.Id.ToString()), // Internal user ID - primary identifier
+            new Claim("sub", user.GoogleUserId), // Google user ID - secondary identifier
+            new Claim("email", user.Email),
+            new Claim("name", user.Name),
+            new Claim("picture", user.Picture),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()), // unique token ID
+        };
+
+        var token = GenerateJwtToken(claims);
+
+        InvalidateActiveRefreshTokens();
+
+        var (refreshToken, plaintextRefreshToken) = GenerateRefreshToken(user);
+
+        var cookieOptions = new CookieOptions();
+        cookieOptions.Expires = refreshToken.ExpiresAt;
+        cookieOptions.Path = "/api";
+        Response.Cookies.Append("RefreshToken", plaintextRefreshToken, cookieOptions);
+
+        _db.UserRefreshTokens.Add(refreshToken);
+
+        await _db.SaveChangesAsync();
+
+        return Ok(
+            new
+            {
+                User = new
+                {
+                    Email = user.Email,
+                    Picture = user.Picture,
+                    Name = user.Name,
+                },
+                Token = token,
+            }
+        );
+    }
+
+    private (UserRefreshToken, string) GenerateRefreshToken(User user)
+    {
+        var Headers = _contextAccessor.HttpContext.Request.Headers;
+
+        var refreshToken =
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))
+            + Headers.UserAgent
+            + user.Id;
+
+        using (HashAlgorithm algo = SHA256.Create()) {
+            var tokenHash = algo.ComputeHash(Encoding.UTF8.GetBytes(refreshToken));
+            var Sb = new StringBuilder();
+            foreach (Byte b in tokenHash)
+                Sb.Append(b.ToString("x2"));
+            refreshToken = Sb.ToString();
+        }
+
+        if (refreshToken == null) {
+            throw new NullReferenceException("Error creating refresh token hash");
+        }
+
+        var token = new UserRefreshToken
+        {
+            TokenHash = HashRefreshToken(refreshToken),
+            CreatedAt = DateTime.Now.ToUniversalTime(),
+            ExpiresAt = DateTime.Now.AddDays(30).ToUniversalTime(),
+            User = user,
+        };
+
+        return (token, refreshToken);
+    }
+
+    private async void InvalidateActiveRefreshTokens()
+    {
+        var Cookies = _contextAccessor.HttpContext.Request.Cookies;
+        if (Cookies.ContainsKey("RefreshToken"))
+        {
+            var existingToken = await _db.UserRefreshTokens.FirstOrDefaultAsync(t =>
+                t.TokenHash == HashRefreshToken(Cookies["RefreshToken"])
+            );
+            if (existingToken != null)
+            {
+                _db.UserRefreshTokens.Remove(existingToken);
+            }
+        }
+    }
+
+    private string HashRefreshToken(string PlaintextRefreshToken)
+    {
+        using (SHA256 sha256Hash = SHA256.Create())
+        {
+            byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(PlaintextRefreshToken));
+            StringBuilder builder = new StringBuilder();
+            foreach (byte b in bytes)
+            {
+                builder.Append(b.ToString("x2")); // Convert to hexadecimal string
+            }
+            return builder.ToString();
+        }
+    }
+
+    private async Task<GoogleUserInfo> GetUserProfileAsync(string accessToken)
+    {
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        var response = await httpClient.GetStringAsync(
+            "https://www.googleapis.com/oauth2/v2/userinfo"
+        );
+        var userInfo = JsonSerializer.Deserialize<GoogleUserInfo>(
+            response,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }
+        );
+
+        return userInfo!;
+    }
+
+    private void StoreUserTokensAsync(User user, TokenResponse tokenResponse)
+    {
+        var userTokens = new UserTokens
+        {
+            AccessToken = tokenResponse.AccessToken,
+            RefreshToken = tokenResponse.RefreshToken,
+            TokenType = tokenResponse.TokenType,
+            ExpiresInSeconds = tokenResponse.ExpiresInSeconds,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600),
+        };
+
+        user.Tokens = userTokens;
+        userTokens.User = user;
+
+        _db.UserTokens.Add(userTokens);
+    }
+
+    /*[Authorize]
+    [HttpGet("user")]
+    public IActionResult GetCurrentUser()
+    {
+        return Ok(
+            new
+            {
+                Name = User.FindFirst(ClaimTypes.Name)?.Value,
+                Email = User.FindFirst(ClaimTypes.Email)?.Value,
+                Picture = User.FindFirst("picture")?.Value,
+            }
+        );
+    }*/
 
     private string GenerateJwtToken(IEnumerable<Claim> claims)
     {
@@ -72,17 +282,29 @@ public class AuthController : ControllerBase
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    [Authorize]
-    [HttpGet("user")]
-    public IActionResult GetCurrentUser()
+    public class LoginDTO
     {
-        return Ok(
-            new
+        public String Code { get; set; } = String.Empty;
+        public String RedirectUri { get; set; } = String.Empty;
+    }
+
+    public class GoogleUserInfo
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Picture { get; set; } = string.Empty;
+        public bool VerifiedEmail { get; set; }
+
+        public User CreateUser()
+        {
+            return new User
             {
-                Name = User.FindFirst(ClaimTypes.Name)?.Value,
-                Email = User.FindFirst(ClaimTypes.Email)?.Value,
-                Picture = User.FindFirst("picture")?.Value,
-            }
-        );
+                GoogleUserId = this.Id,
+                Name = this.Name,
+                Email = this.Email,
+                Picture = this.Picture,
+            };
+        }
     }
 }

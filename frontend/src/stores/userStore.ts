@@ -1,68 +1,58 @@
 import { defineStore } from 'pinia'
-import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { ref } from 'vue'
 
-export const useUserStore = defineStore('user', () => {
-    const router = useRouter()
+interface State {
+    clientId: string,
+    initDone: boolean,
+    user: UserInformation|null,
+}
 
-    // Data
-    const userData = ref<object>({})
+export type UserInformation = {
+    id: string,
+    email: string,
+    name: string,
+    picture: string,
+    token: string,
+}
 
-    const fetchUserDataFrom = async (code: any) => {
-        // try {
-        //     localStorage.setItem('gCode', JSON.stringify(code))
-        //
-        //     const { data } = await axios.post(
-        //         'https://oauth2.googleapis.com/token',
-        //         {
-        //             code,
-        //             client_id: clientId.value,
-        //             client_secret: clientSecret.value,
-        //             redirect_uri: location.origin,
-        //             grant_type: 'authorization_code',
-        //         },
-        //     )
-        //
-        //     if (data) {
-        //         const accessToken = data.access_token
-        //
-        //         // Fetch user details using the access token
-        //         const userObj = await axios.get(
-        //             'https://www.googleapis.com/oauth2/v3/userinfo',
-        //             {
-        //                 headers: {
-        //                     Authorization: `Bearer ${accessToken}`,
-        //                 },
-        //             },
-        //         )
-        //
-        //         if (userObj && userObj.data) {
-        //             // save copy in storage
-        //             localStorage.setItem('user', JSON.stringify(userObj.data))
-        //             userData.value = userObj.data
-        //         }
-        //         else {
-        //             // Handle the case where userResponse or userResponse.data is undefined
-        //             console.error('Failed to fetch user data')
-        //         }
-        //     }
-        // }
-        // catch (e) {
-        //     console.error('Failed to exchange token', e)
-        // }
+const LOCALSTORAGE_USERINFO_KEY = "aioniq_v1_user";
+
+const getUserInformation = function(): UserInformation | null {
+    const localstorageItem = localStorage.getItem(LOCALSTORAGE_USERINFO_KEY);
+    if (localstorageItem === null) {
+        return null;
+    } else {
+        return JSON.parse(localstorageItem);
     }
+}
 
-    return {
-        // Data
-        // clientId,
-        // clientSecret,
-        userData,
+const setUserInformation = function(userInformation: UserInformation) {
+    localStorage.setItem(LOCALSTORAGE_USERINFO_KEY, JSON.stringify(userInformation));
+}
 
-        // Functions
-        fetchUserDataFrom,
-    }
+const loadUserInformation = async function() {
+
+}
+
+export const useUserStore = defineStore('user', {
+    state: (): State => ({
+        clientId: "804363148845-4mui1b168btsdojprj0ddsf0tfttkmlc.apps.googleusercontent.com",
+        initDone: false,
+        user: null,
+    }),
+    actions: {
+        loginOrRegister: async function(code: string, redirectUri: string) {
+            axios.post("/api/Auth/HandleOAuthLogin", {
+                code: code,
+                redirectUri: redirectUri,
+            });
+        },
+        init: async function() {
+            const self = this;
+            window.setTimeout(function() {
+                self.initDone = true;
+            }, 2000);
+        },
+    },
 })
-
-export default useUserStore
 

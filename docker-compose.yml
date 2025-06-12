@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres
+    volumes:
+      - db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=aioniq
+      - POSTGRES_PASSWORD=aioniq
+      - POSTGRES_DB=aioniq
+    ports:
+      - 5432:5432
+    container_name: aioniq_db
+
+volumes:
+  db:

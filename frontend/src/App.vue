@@ -1,49 +1,43 @@
 <template>
-    <header>
+    <template v-if="initDone">
+        <Header />
+        <!--<header>
         <div class="wrapper">
-            <HelloWorld msg="You did it!" />
-
             <nav>
                 <RouterLink to="/">Home</RouterLink>
             </nav>
         </div>
-    </header>
-    <el-button @click="signInWithGoogle">Login</el-button>
-
-    <RouterView />
+    </header>-->
+        <RouterView />
+    </template>
 </template>
 
 <script setup lang="ts">
-// import { RouterLink, RouterView } from 'vue-router'
-// import HelloWorld from './components/HelloWorld.vue'
-import { decodeCredential, googleSdkLoaded } from 'vue3-google-login';
-import { useUserStore } from '@/stores/userStore'
-import { storeToRefs } from 'pinia';
+import { computed, onMounted } from 'vue';
+import Header from './components/Header.vue';
+import { useUserStore } from './stores/userStore';
+import { ElLoading } from 'element-plus';
 
 const userStore = useUserStore();
-const {clientId} = storeToRefs(userStore)
-const { fetchUserDataFrom } = userStore
 
-const callback = function (response) {
-    console.log(response);
-    const userData = decodeCredential(response.credential)
-    console.log("Handle the userData", userData)
-}
+onMounted(() => {
+    console.log("mounted...");
+    const loading = ElLoading.service({
+        lock: true,
+        text: 'Loading',
+        background: 'rgba(0, 0, 0, 0.7)',
+    });
+    userStore.init();
 
-const signInWithGoogle = () => {
-    googleSdkLoaded(google => {
-        google.accounts.oauth2
-            .initCodeClient({
-                client_id: clientId.value,
-                scope: 'email profile openid https://www.googleapis.com/auth/tasks.readonly',
-                redirect_uri: location.origin,
-                callback: response => {
-                    console.log(response);
-                    if (response.code)
-                        fetchUserDataFrom(response.code)
-                },
-            })
-            .requestCode()
-    })
-}
+    const loadingCheckInterval = window.setInterval(function() {
+        if (userStore.initDone) {
+            loading.close();
+            window.clearInterval(loadingCheckInterval);
+        }
+    }, 100);
+});
+
+const initDone = computed(() => {
+    return userStore.initDone;
+})
 </script>

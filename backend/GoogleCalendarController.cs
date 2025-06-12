@@ -1,9 +1,7 @@
-using System.Threading.Tasks;
+using Google.Apis.Auth.AspNetCore3;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Calendar.v3;
-using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,30 +17,17 @@ public class CalendarController : ControllerBase
         _configuration = configuration;
     }
 
-    [HttpGet("events")]
-    public async Task<IActionResult> GetEvents(DateTime dateTime)
+    [HttpGet("testEvents")]
+    [GoogleScopedAuthorize(CalendarService.ScopeConstants.CalendarReadonly)]
+    public async Task<IActionResult> TestGetEvents([FromServices] IGoogleAuthProvider auth)
     {
-        var accessToken = await HttpContext.GetTokenAsync("access_token");
-
-        if (string.IsNullOrEmpty(accessToken))
-            return Unauthorized("Google access token not found");
-
+        GoogleCredential cred = await auth.GetCredentialAsync();
         var service = new CalendarService(
-            new BaseClientService.Initializer
-            {
-                HttpClientInitializer = GoogleCredential.FromAccessToken(accessToken),
-                ApplicationName = "aioniq",
-            }
+            new BaseClientService.Initializer { HttpClientInitializer = cred }
         );
 
-        var request = service.Events.List("primary");
-        request.TimeMin = DateTime.Now;
-        request.MaxResults = 10;
-        request.SingleEvents = true;
-        request.OrderBy = EventsResource.ListRequest.OrderByEnum.StartTime;
-
-        var events = await request.ExecuteAsync();
-
-        return Ok(events.Items);
+        var calendars = await service.CalendarList.List().ExecuteAsync();
+        var calendarNames = calendars.Items.Select(x => x.Id).ToList();
+        return Ok(calendarNames);
     }
 }
